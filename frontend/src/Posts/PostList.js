@@ -10,9 +10,9 @@ function PostList() {
     const fetchPosts = async () => {
       try {
         // Get the token from localStorage
-        const token = localStorage.getItem('access_token');
+        const token = localStorage.getItem("access_token");
         console.log(token);
-        
+
         if (!token) {
           console.error("No token found. Please log in.");
           // window.location.href = "/login";
@@ -51,14 +51,14 @@ function PostList() {
         ))
       )} */}
       {posts.map((post) => (
-          <div className="container" key={post.id}>
-            <h3>{post.title}</h3>
-            <p>{post.content}</p>
-            <small>
-              Posted on {new Date(post.created_at).toLocaleDateString()}
-            </small>
-          </div>
-        ))}
+        <div className="container" key={post.id}>
+          <h3>{post.title}</h3>
+          <p>{post.content}</p>
+          <small>
+            Posted on {new Date(post.created_at).toLocaleDateString()}
+          </small>
+        </div>
+      ))}
     </div>
   );
 }

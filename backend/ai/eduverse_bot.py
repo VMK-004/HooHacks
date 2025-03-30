@@ -7,7 +7,6 @@ from google import genai
 import os
 from dotenv import load_dotenv
 
-
 class EduVerseBot(ActivityHandler):
     def __init__(self):
         super().__init__()
@@ -39,7 +38,22 @@ class EduVerseBot(ActivityHandler):
             conversation_context += f"User: {interaction['user_message']}\n"
             conversation_context += f"Edura: {interaction['bot_response']}\n"
         
-        prompt = f"{system_prompt}\n\nConversation History:\n{conversation_context}\n\nUser: {user_message}\nEdura:"
+        project_data = ""
+        tech_keywords = {
+            'python': 'python_projects',
+            'java': 'java_projects',
+            'node': 'node_projects',
+            'javascript': 'node_projects',
+            'react': 'react_projects',
+            'sql': 'sql_projects',
+            'database': 'sql_projects'
+        }
+        for keyword, data_key in tech_keywords.items():
+            if keyword in user_message.lower() and data_key in self.knowledge_base:
+                project_data += f"\n\n{keyword.upper()} PROJECTS DATA:\n"
+                project_data += json.dumps(self.knowledge_base[data_key][:3], indent=2)
+        
+        prompt = f"{system_prompt}\n\n{project_data}\n\nConversation History:\n{conversation_context}\n\nUser: {user_message}\nEdura:"
         print(prompt)
         try:
             response = self.genai_client.models.generate_content(
@@ -52,11 +66,12 @@ class EduVerseBot(ActivityHandler):
             return "I'm having trouble connecting to my knowledge systems. Let's try a different approach to your question."
 
     def _load_knowledge_base(self):
+        kb = {}
         try:
             with open('ai/knowledge_base.json', 'r') as f:
-                return json.load(f)
+                kb = json.load(f)
         except FileNotFoundError:
-            return {
+            kb = {
                 'faqs': {
                     'how to start': 'Start by choosing a learning path and completing the skill assessment',
                     'pricing': 'We offer both free and premium plans. Check our pricing page for details',
@@ -91,6 +106,23 @@ class EduVerseBot(ActivityHandler):
                 'courses': {},
                 'learning_data': []
             }
+        
+        project_files = [
+            ('python_projects_complete.json', 'python_projects'),
+            ('java_projects_complete.json', 'java_projects'),
+            ('node_projects_complete.json', 'node_projects'),
+            ('react_projects_complete.json', 'react_projects'),
+            ('sql_projects_complete.json', 'sql_projects')
+        ]
+        for file_name, key_name in project_files:
+            try:
+                with open(f'frontend/src/Notes/{file_name}', 'r') as f:
+                    kb[key_name] = json.load(f)
+                    print(f"Loaded {file_name} successfully")
+            except FileNotFoundError:
+                print(f"Warning: {file_name} not found")
+        
+        return kb
 
     async def _save_interaction(self, user_id, user_message, bot_response):
         if user_id not in self.conversation_history:
@@ -99,26 +131,19 @@ class EduVerseBot(ActivityHandler):
             'user_message': user_message,
             'bot_response': bot_response
         })
-
-        
-
         self.knowledge_base['learning_data'].append({
             'input': user_message,
             'response': bot_response
         })
-        # Save updated knowledge base
         with open('ai/knowledge_base.json', 'w') as f:
             json.dump(self.knowledge_base, f)
 
     async def _analyze_code(self, code):
         suggestions = []
-        
         if 'print' in code and not any(['def' in code, 'class' in code]):
             suggestions.append("Consider wrapping this code in a function for better reusability")
-        
         if not code.strip().startswith('def') and len(code.split('\n')) > 5:
             suggestions.append("Consider breaking this code into smaller functions")
-            
         return suggestions
 
     async def on_message_activity(self, turn_context: TurnContext):
@@ -132,17 +157,25 @@ class EduVerseBot(ActivityHandler):
             suggestions = await self._analyze_code(code)
             response = "Code Analysis Results:\n" + "\n".join(suggestions)
         elif "project" in user_message:
-            category = next((cat for cat in ['web', 'python'] if cat in user_message), None)
-            if category and category in self.knowledge_base['project_suggestions']:
-                projects = self.knowledge_base['project_suggestions'][category]
-                response = f"Here are some {category.title()} project suggestions:\n"
-                response += "\n".join([f"{i+1}. {p['name']} ({p['difficulty']})" 
-                                     for i, p in enumerate(projects)])
+            tech_mapping = {
+                'python': 'python_projects',
+                'java': 'java_projects', 
+                'node': 'node_projects',
+                'javascript': 'node_projects',
+                'react': 'react_projects',
+                'sql': 'sql_projects',
+                'database': 'sql_projects'
+            }
+            detected_tech = next((tech for tech in tech_mapping.keys() if tech in user_message), None)
+            if detected_tech and tech_mapping[detected_tech] in self.knowledge_base:
+                response = await self._generate_gemini_response(user_message, user_id)
+            elif detected_tech:
+                response = f"I don't have detailed {detected_tech} project data, but here are some general suggestions..."
             else:
-                response = "I can suggest projects in various domains. What technology or field interests you? (e.g., Python, Web Development, Mobile Apps)"
+                response = "I can suggest projects in various technologies. What interests you? (Python, Java, Node.js, React, SQL)"
         elif "career" in user_message:
             career_type = next((career for career in ['web development', 'data science'] 
-                              if career in user_message), None)
+                            if career in user_message), None)
             if career_type and career_type in self.knowledge_base['career_paths']:
                 career_info = self.knowledge_base['career_paths'][career_type]
                 response = f"For a career in {career_type.title()}, here's what you need to know:\n\n"
@@ -150,7 +183,7 @@ class EduVerseBot(ActivityHandler):
                 response += f"Key Skills:\n{', '.join(career_info['skills'])}\n\n"
                 response += f"Recommended Courses:\n{', '.join(career_info['courses'])}"
             else:
-                response = "I can provide career guidance in various tech fields. What area interests you? (e.g., Data Science, Web Development, Cloud Computing)"
+                response = "I can provide career guidance in various tech fields. What area interests you?"
         elif "course" in user_message:
             if "beginner" in user_message:
                 response = "For beginners, I recommend:\n1. CS50 by Harvard\n2. Python for Everybody\n3. Web Development Bootcamp"
